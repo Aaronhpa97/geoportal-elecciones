@@ -1,0 +1,13 @@
+[33mcommit a26884dec4ef05b92b51d8b6e14a3a1e5b53ef72[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: Aaronhpa97 <aaronhpa97@gmail.com>
+Date:   Fri Nov 6 19:05:16 2026 +0100
+
+    Primer commit
+
+ datos/resultados_historicos.csv | 91019 [32m++++++++++++++++++++++++++++++++++++++[m
+ scripts/convertir_dat_a_csv.py  |    70 [32m+[m
+ scripts/procesar_datos.py       |    45 [32m+[m
+ web/index.html                  |    75 [32m+[m
+ web/mapa.geojson                |  8139 [32m++++[m
+ web/resultados.json             |     1 [32m+[m
+ 6 files changed, 99349 insertions(+)

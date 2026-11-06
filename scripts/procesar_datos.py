@@ -16,7 +16,7 @@ ganadores.columns = ["codigo_municipio", "partido_ganador", "votos_ganador"]
 
 # 3. Cargar las geometrías (Shapefile)
 print("Cargando geometrías...")
-geometrias = gpd.read_file("../datos/geometrias/Municipios.geojson")
+geometrias = gpd.read_file("../datos/geometrias/municipios_simplificado.geojson")
 
 # 4. Asegurarnos de que la columna de código INE se llama igual en ambos
 # (En los Shapefiles del INE suele llamarse "COD_INE" o "codigo_municipio")
@@ -30,7 +30,7 @@ mapa = geometrias.merge(ganadores, on="codigo_municipio", how="left")
 mapa = mapa.to_crs(epsg=4326)
 
 # 7. Simplificar la geometría para que el archivo pese menos (opcional pero recomendado)
-mapa["geometry"] = mapa["geometry"].simplify(tolerance=0.001, preserve_topology=True)
+#mapa["geometry"] = mapa["geometry"].simplify(tolerance=0.001, preserve_topology=True)
 
 # 8. Guardar como GeoJSON
 print("Guardando GeoJSON...")
