@@ -1,0 +1,42 @@
+name: Actualizar datos electorales
+
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install pandas geopandas
+
+      - name: Ejecutar script de procesamiento
+        run: python scripts/procesar_datos.py
+
+      - name: Verificar que se han generado los archivos
+        run: |
+          ls -la web/
+          test -f web/mapa.geojson
+          test -f web/resultados.json
+
+      - name: Commit y push de los cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add web/mapa.geojson web/resultados.json
+          git diff --quiet && git diff --staged --quiet && echo "Sin cambios, nada que commitear" && exit 0
+          git commit -m "Actualización automática de datos [$(date)]"
+          git push
