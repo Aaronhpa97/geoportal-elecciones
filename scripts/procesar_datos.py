@@ -34,7 +34,7 @@ mapa = mapa.to_crs(epsg=4326)
 
 # 8. Guardar como GeoJSON
 print("Guardando GeoJSON...")
-mapa.to_file("E:/proyecto_elecciones/web/mapa.geojson", driver="GeoJSON")
+mapa.to_file("../web/mapa.geojson", driver="GeoJSON")
 
 # 9. Guardar un JSON con los datos de ganadores (para los popups)
 print("Guardando JSON de resultados...")
