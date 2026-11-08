@@ -17,10 +17,10 @@
 <body>
     <div id="map"></div>
     <script>
-        // 1. Inicializar el mapa centrado en España
+        // Inicializar el mapa centrado en España
         var map = L.map('map').setView([40.4168, -3.7038], 6);
 
-        // 2. Añadir capa base (OpenStreetMap)
+        // Añadir capa base (OpenStreetMap)
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
@@ -51,7 +51,21 @@
         };
         legend.addTo(map);
 
-        // 3. Cargar el GeoJSON con los resultados
+        //Selección
+        let municipiosSeleccionados = []; // Guarda los objetos {nombre, votos, partido}
+        let capasMunicipios = {}; // Referencia a cada capa por su código, para cambiar el estilo
+        
+        var panelSuma = L.control({position: 'topright'});
+
+        panelSuma.onAdd = function (map) {
+            var div = L.DomUtil.create('div', 'info');
+            div.id = 'panel-suma';
+            div.innerHTML = '<h4>Suma de municipios</h4><p>Haz clic en los municipios para seleccionarlos.</p><div id="lista-seleccionados"></div><hr><b>Total votos ganador: <span id="total-votos">0</span></b>';
+            return div;
+        };
+        panelSuma.addTo(map);
+
+        // Cargar el GeoJSON con los resultados
         fetch('mapa.geojson')
             .then(response => response.json())
             .then(data => {
@@ -93,11 +107,80 @@
                             '<b>Votos: </b>' + feature.properties.votos_ganador
                         );
                     }
+                    // Guardamos la capa para poder cambiar su estilo luego
+                    const codigo = feature.properties.codigo_municipio;
+                    capasMunicipios[codigo] = layer;
+
+                    // Evento de clic para seleccionar/deseleccionar
+                    layer.on('click', function (e) {
+                        L.DomEvent.stopPropagation(e); // Evita que el clic se propague al mapa
+
+                        const index = municipiosSeleccionados.findIndex(m => m.codigo === codigo);
+
+                        if (index === -1) {
+                            // --- SELECCIONAR ---
+                            municipiosSeleccionados.push({
+                                codigo: codigo,
+                                votos: feature.properties.votos_ganador || 0,
+                                partido: feature.properties.partido_ganador || 'Sin datos'
+                            });
+
+                            // Estilo visual: borde más grueso y oscuro
+                            layer.setStyle({
+                                weight: 3,
+                                color: '#000000',
+                                dashArray: '',
+                                fillOpacity: 0.9
+                            });
+                            layer.bringToFront();
+
+                        } else {
+                            // --- DESELECCIONAR ---
+                            municipiosSeleccionados.splice(index, 1);
+
+                            // Restaurar estilo original (el que definiste en la función `style`)
+                            layer.setStyle(estiloOriginal(feature));
+                        }
+
+                        actualizarPanelSuma();
+                    });
+                }
+
+                function estiloOriginal(feature) {
+                    return {
+                        fillColor: getColor(feature.properties.partido_ganador),
+                        weight: 1,
+                        opacity: 1,
+                        color: 'white',
+                        fillOpacity: 0.7
+                    };
+                }
+
+                function actualizarPanelSuma() {
+                    const listaDiv = document.getElementById('lista-seleccionados');
+                    const totalSpan = document.getElementById('total-votos');
+
+                    if (!listaDiv || !totalSpan) return; // Por si el panel no está listo
+
+                    // Limpiar lista
+                    listaDiv.innerHTML = '';
+
+                    let totalVotos = 0;
+
+                    municipiosSeleccionados.forEach(m => {
+                        totalVotos += m.votos;
+                        const item = document.createElement('div');
+                        item.style.marginBottom = '4px';
+                        item.innerHTML = `· ${m.codigo}: <b>${m.partido}</b> (${m.votos} votos)`;
+                        listaDiv.appendChild(item);
+                    });
+
+                    totalSpan.textContent = totalVotos.toLocaleString('es-ES');
                 }
 
                 // Añadir la capa GeoJSON al mapa
                 L.geoJSON(data, {
-                    style: style,
+                    style: estiloOriginal,
                     onEachFeature: onEachFeature
                 }).addTo(map);
             })
