@@ -25,6 +25,32 @@
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
+        // Leyenda de partidos
+        var legend = L.control({position: 'bottomright'});
+
+        legend.onAdd = function (map) {
+            var div = L.DomUtil.create('div', 'info legend');
+            var partidos = [
+                {nombre: 'PSOE', color: '#E31C1C'},
+                {nombre: 'PP', color: '#2E86C1'},
+                {nombre: 'Vox', color: '#27AE60'},
+                {nombre: 'Sumar/Podemos', color: '#8E44AD'},
+                {nombre: 'ERC', color: '#fcf40d'},
+                {nombre: 'Junts', color: '#FDB612'},
+                {nombre: 'EH Bildu', color: '#00D0B6'},
+                {nombre: 'PNV', color: '#2E7D32'},
+                {nombre: 'BNG', color: '#A2C7E4'},
+                {nombre: 'Otros', color: '#7f8a81'}
+            ];
+            var html = '<h4>Partido ganador</h4>';
+            partidos.forEach(function(p) {
+                html += '<i style="background:' + p.color + '; width:12px; height:12px; display:inline-block; margin-right:5px;"></i> ' + p.nombre + '<br>';
+            });
+            div.innerHTML = html;
+            return div;
+        };
+        legend.addTo(map);
+
         // 3. Cargar el GeoJSON con los resultados
         fetch('mapa.geojson')
             .then(response => response.json())
@@ -32,13 +58,19 @@
                 // Función para asignar color según el partido ganador
                 function getColor(partido) {
                     if (!partido) return '#cccccc'; // gris si no hay datos
-                    if (partido.includes('PP')) return '#2E86C1'; // azul
-                    if (partido.includes('POPULAR')) return '#2E86C1'; // azul
-                    if (partido.includes('PSOE')) return '#E74C3C'; // rojo
-                    if (partido.includes('SOCIALISTA')) return '#E74C3C'; // rojo
-                    if (partido.includes('VOX')) return '#27AE60'; // verde
-                    if (partido.includes('SUMAR')) return '#8E44AD'; // morado
-                    return '#F1C40F'; // amarillo para otros
+
+                    const p = partido.toUpperCase();
+
+                    if (p.includes('PP') || p.includes('POPULAR')) return '#2E86C1'; // azul
+                    if (p.includes('PSOE') || p.includes('PSC') || p.includes('PSdeG') || p.includes('SOCIALISTA')) return '#E74C3C'; // rojo
+                    if (p.includes('VOX')) return '#27AE60'; // verde
+                    if (p.includes('SUMAR') || p.includes('PODEMOS') || p.includes('UNIDAS PODEMOS') || p.includes('COMPROMIS')) return '#8E44AD'; // morado
+                    if (p.includes('ERC') || p.includes('ESQUERRA REPUBLICANA')) return '#fcf40d';
+                    if (p.includes('JUNTS')) return '#FDB612';
+                    if (p.includes('BILDU') || p.includes('EH BILDU')) return '#00D0B6';
+                    if (p.includes('PNV') || p.includes('EAJ-PNV')) return '#2E7D32';
+                    if (p.includes('BNG') || p.includes('BLOQUE NACIONALISTA')) return '#A2C7E4';
+                    return '#7f8a81'; // amarillo para otros
                 }
 
                 // Estilo de cada municipio
