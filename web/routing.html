@@ -35,6 +35,22 @@
         .fila-resultado .nombre { flex: 1; font-weight: bold; }
         .fila-resultado .datos { text-align: right; color: #555; }
         .mensaje { color: #888; font-size: 12px; text-align: center; padding: 8px 0; }
+        .fila-busqueda { position: relative; margin-bottom: 10px; }
+        .fila-busqueda label { font-weight: bold; font-size: 12px; display: block; margin-bottom: 3px; }
+        .fila-busqueda input {
+            width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;
+            box-sizing: border-box; font-size: 13px;
+        }
+        .sugerencias {
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 1100;
+            background: white; border: 1px solid #ccc; border-top: none;
+            border-radius: 0 0 4px 4px; max-height: 180px; overflow-y: auto;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: none;
+        }
+        .sugerencias .item {
+            padding: 6px 8px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0;
+        }
+        .sugerencias .item:hover { background-color: #e0f2ff; }
     </style>
 </head>
 <body>
@@ -47,6 +63,17 @@
 
 <div class="panel">
     <h4>🚗 Comparador de rutas</h4>
+    <div class="fila-busqueda">
+        <label for="input-origen">Origen:</label>
+        <input type="text" id="input-origen" placeholder="Ej: Puerta del Sol, Madrid" autocomplete="off">
+        <div id="sugerencias-origen" class="sugerencias"></div>
+    </div>
+    <div class="fila-busqueda">
+        <label for="input-destino">Destino:</label>
+        <input type="text" id="input-destino" placeholder="Ej: Sagrada Familia, Barcelona" autocomplete="off">
+        <div id="sugerencias-destino" class="sugerencias"></div>
+    </div>
+    <hr style="border:none; border-top:1px solid #eee; margin:10px 0;">
     <div class="fila-vel">
         <span>Autovía (km/h)</span>
         <div class="grupo">
@@ -77,6 +104,12 @@ const GH_API_KEY = '4a390548-61d4-43d0-ad3b-2cb729210cb5';
 const ORIGEN  = { lat: 40.4168, lng: -3.7038 };  // Madrid
 const DESTINO = { lat: 41.3874, lng: 2.1686 };   // Barcelona
 
+// Objeto para guardar los puntos seleccionados por el usuario
+const puntosSeleccionados = {
+    origen: null,   // { lat, lng, label }
+    destino: null
+};
+
 // ============================================================
 // MAPA Y PANES (z-index fijo)
 // ============================================================
@@ -91,8 +124,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     pane.style.zIndex = 410 + i * 10;
 });
 
-L.marker([ORIGEN.lat, ORIGEN.lng]).addTo(map).bindPopup('Origen: Madrid');
-L.marker([DESTINO.lat, DESTINO.lng]).addTo(map).bindPopup('Destino: Barcelona');
+window.marcadorOrigen  = L.marker([ORIGEN.lat, ORIGEN.lng]).addTo(map).bindPopup('Origen');
+window.marcadorDestino = L.marker([DESTINO.lat, DESTINO.lng]).addTo(map).bindPopup('Destino');
 
 let capasActuales = [];
 
@@ -122,25 +155,48 @@ function limpiarRutas() {
 // PETICIÓN A GRAPHHOPPER
 // ============================================================
 async function calcularRuta(escenario) {
-    const customModel = construirCustomModel(escenario.velocidades);
-    const params = new URLSearchParams();
-    params.append('point', `${ORIGEN.lat},${ORIGEN.lng}`);
-    params.append('point', `${DESTINO.lat},${DESTINO.lng}`);
-    params.set('profile', 'car');
-    params.set('points_encoded', 'false');
-    params.set('locale', 'es');
-    params.set('key', GH_API_KEY);
+    const origen = puntosSeleccionados.origen;
+    const destino = puntosSeleccionados.destino;
+    if (!origen || !destino) throw new Error('Origen y destino no seleccionados');
 
+    const body = {
+        points: [
+            [origen.lng, origen.lat],
+            [destino.lng, destino.lat]
+        ],
+        profile: 'car',
+        points_encoded: false,
+        locale: 'es'
+    };
+
+    const customModel = construirCustomModel(escenario.velocidades);
     if (customModel) {
-        params.set('ch.disable', 'true');
-        params.set('custom_model', JSON.stringify(customModel));
+        body['ch.disable'] = true;          // OBLIGATORIO para custom_model
+        body['custom_model'] = customModel;
     }
 
-    const url = `https://graphhopper.com/api/1/route?${params.toString()}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} (${escenario.nombre})`);
+    const url = `https://graphhopper.com/api/1/route?key=${GH_API_KEY}`;
+
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+
+    if (!resp.ok) {
+        // Intentamos leer el mensaje de error que devuelve GraphHopper
+        let detalle = '';
+        try {
+            const errJson = await resp.json();
+            detalle = errJson.message || JSON.stringify(errJson);
+        } catch (_) {}
+        throw new Error(`HTTP ${resp.status} (${escenario.nombre})${detalle ? ': ' + detalle : ''}`);
+    }
+
     const data = await resp.json();
-    if (!data.paths || !data.paths[0]) throw new Error(`Sin ruta (${escenario.nombre})`);
+    if (!data.paths || !data.paths[0]) {
+        throw new Error(`Sin ruta (${escenario.nombre})`);
+    }
 
     return { ...escenario, ruta: data.paths[0] };
 }
@@ -152,10 +208,23 @@ async function calcularYComparar() {
     const btn = document.getElementById('btn-calcular');
     const divRes = document.getElementById('resultados');
 
+    // --- NUEVO: Validar que se han seleccionado origen y destino ---
+    if (!puntosSeleccionados.origen || !puntosSeleccionados.destino) {
+        divRes.innerHTML = '<div class="mensaje" style="color:#C0392B;">❌ Selecciona un origen y un destino de las sugerencias.</div>';
+        return;
+    }
     btn.disabled = true;
     btn.textContent = '⏳ Calculando...';
-    divRes.innerHTML = '<div class="mensaje">Calculando 3 rutas en paralelo...</div>';
-    limpiarRutas();
+
+    // --- NUEVO: Actualizar las coordenadas globales con las seleccionadas ---
+    const origenActual = puntosSeleccionados.origen;
+    const destinoActual = puntosSeleccionados.destino;
+
+    // Actualizar los marcadores en el mapa
+    if (window.marcadorOrigen) map.removeLayer(window.marcadorOrigen);
+    if (window.marcadorDestino) map.removeLayer(window.marcadorDestino);
+    window.marcadorOrigen = L.marker([origenActual.lat, origenActual.lng]).addTo(map).bindPopup('Origen: ' + origenActual.label).openPopup();
+    window.marcadorDestino = L.marker([destinoActual.lat, destinoActual.lng]).addTo(map).bindPopup('Destino: ' + destinoActual.label).openPopup();
 
     const escenarios = [
         {
@@ -180,6 +249,7 @@ async function calcularYComparar() {
 
     try {
         // 3 peticiones en paralelo (3 créditos)
+        limpiarRutas();
         const resultados = await Promise.all(escenarios.map(calcularRuta));
 
         // Asignación de panes por duración: la más lenta al pane más bajo,
@@ -233,6 +303,77 @@ async function calcularYComparar() {
         btn.textContent = '🔄 Calcular y comparar';
     }
 }
+
+
+// Función genérica para buscar direcciones en CartoCiudad
+async function buscarDireccionCartoCiudad(texto) {
+    if (!texto || texto.length < 3) return [];
+    const url = `https://www.cartociudad.es/geocoder/api/geocoder/candidatesJsonp?q=${encodeURIComponent(texto)}&limit=5`;
+    try {
+        const resp = await fetch(url);
+        // CartoCiudad devuelve 204 (sin contenido) si no hay resultados, lo cual no es un error.
+        if (resp.status === 204) return [];
+        if (!resp.ok) throw new Error('Error en la búsqueda');
+        const data = await resp.json();
+        // La API devuelve un array de candidatos.
+        return data.map(item => ({
+            label: item.address || item.muni || 'Dirección desconocida',
+            lat: parseFloat(item.lat),
+            lng: parseFloat(item.lng)
+        })).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
+    } catch (e) {
+        console.error("Error buscando en CartoCiudad:", e);
+        return [];
+    }
+}
+
+// Configurar un campo de entrada con autocompletado
+function configurarBuscador(idInput, idSugerencias, clavePunto) {
+    const input = document.getElementById(idInput);
+    const divSugerencias = document.getElementById(idSugerencias);
+    let timeoutId = null;
+
+    input.addEventListener('input', () => {
+        clearTimeout(timeoutId);
+        const texto = input.value.trim();
+        if (texto.length < 3) {
+            divSugerencias.style.display = 'none';
+            return;
+        }
+        // Debounce para no saturar la API en cada pulsación
+        timeoutId = setTimeout(async () => {
+            const resultados = await buscarDireccionCartoCiudad(texto);
+            divSugerencias.innerHTML = '';
+            if (resultados.length === 0) {
+                divSugerencias.style.display = 'none';
+                return;
+            }
+            resultados.forEach(res => {
+                const item = document.createElement('div');
+                item.className = 'item';
+                item.textContent = res.label;
+                item.addEventListener('click', () => {
+                    input.value = res.label;
+                    puntosSeleccionados[clavePunto] = res;
+                    divSugerencias.style.display = 'none';
+                });
+                divSugerencias.appendChild(item);
+            });
+            divSugerencias.style.display = 'block';
+        }, 300); // 300 ms de espera
+    });
+
+    // Ocultar sugerencias al hacer clic fuera
+    document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !divSugerencias.contains(e.target)) {
+            divSugerencias.style.display = 'none';
+        }
+    });
+}
+
+// Inicializar los dos buscadores
+configurarBuscador('input-origen', 'sugerencias-origen', 'origen');
+configurarBuscador('input-destino', 'sugerencias-destino', 'destino');
 </script>
 
 </body>
