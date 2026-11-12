@@ -10,181 +10,356 @@
     <style>
         body { margin: 0; padding: 0; }
         #map { height: 100vh; width: 100%; }
-        .info { padding: 6px 8px; font: 14px/16px Arial, Helvetica, sans-serif; background: white; background: rgba(255,255,255,0.8); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; }
-        .info h4 { margin: 0 0 5px; color: #777; }
+
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+        .info h4 { margin: 0 0 5px; color: #333; font-size: 14px; }
+
+        /* Panel de herramientas */
+        .panel-herramientas {
+            position: relative;
+            font-family: Arial, sans-serif;
+        }
+        .btn-toggle-herramientas {
+            background: white;
+            border: none;
+            font-size: 22px;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        .btn-toggle-herramientas:hover { background: #f0f0f0; }
+        .btn-toggle-herramientas.activo { background: #e0e7ff; }
+
+        .contenido-herramientas {
+            position: absolute;
+            top: 52px;
+            right: 0;
+            width: 340px;
+            max-height: 550px;
+            overflow-y: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            padding: 12px;
+            font-size: 13px;
+            z-index: 1000;
+        }
+        .contenido-herramientas h4 {
+            margin: 0 0 8px 0;
+            color: #333;
+            font-size: 14px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 4px;
+        }
+        .btn-accion {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            width: 100%;
+            margin-top: 8px;
+        }
+        .btn-accion:hover { background: #e5e5e5; }
+
+        .fila-partido {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 3px 0;
+            font-size: 12px;
+        }
+        .muestra-color {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            margin-right: 6px;
+            border-radius: 2px;
+            vertical-align: middle;
+        }
+        .lista-municipios {
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 12px;
+            padding: 4px 0;
+        }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <script>
-        // Inicializar el mapa centrado en España
+        // ============================================================
+        // ESTADO GLOBAL
+        // ============================================================
+        let municipiosSeleccionados = {};   // { codigo: { votos: {partido: n}, ganador: str } }
+        let capasMunicipios = {};          // { codigo: { layer, feature } }
+
+        // ============================================================
+        // MAPA BASE
+        // ============================================================
         var map = L.map('map').setView([40.4168, -3.7038], 6);
 
-        // Añadir capa base (OpenStreetMap)
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
-        // Leyenda de partidos
-        var legend = L.control({position: 'bottomright'});
+        // ============================================================
+        // COLORES
+        // ============================================================
+        function getColor(partido) {
+            if (!partido) return '#cccccc';
+            const p = partido.toUpperCase();
 
-        legend.onAdd = function (map) {
-            var div = L.DomUtil.create('div', 'info legend');
+            if (p.includes('PSOE') || p.includes('PSC') || p.includes('PSDEG')) return '#E31C1C';
+            if (p === 'PP' || p.includes('PARTIDO POPULAR')) return '#2E86C1';
+            if (p.includes('VOX')) return '#27AE60';
+            if (p.includes('SUMAR') || p.includes('PODEMOS')) return '#8E44AD';
+            if (p.includes('ERC') || p.includes('ESQUERRA')) return '#C8102E';
+            if (p.includes('JUNTS')) return '#FDB612';
+            if (p.includes('BILDU')) return '#00D0B6';
+            if (p.includes('PNV') || p.includes('EAJ')) return '#2E7D32';
+            if (p.includes('BNG')) return '#751069';
+            if (p === 'OTROS') return '#95A5A6';
+
+            // Color determinístico para cualquier otro partido que haya ganado
+            let hash = 0;
+            for (let i = 0; i < p.length; i++) {
+                hash = p.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = Math.abs(hash) % 360;
+            return `hsl(${hue}, 65%, 50%)`;
+        }
+
+        // ============================================================
+        // ESTILO
+        // ============================================================
+        function estiloOriginal(feature) {
+            return {
+                fillColor: getColor(feature.properties.partido_ganador),
+                weight: 1,
+                opacity: 1,
+                color: 'white',
+                fillOpacity: 0.7
+            };
+        }
+
+        function estiloSeleccionado() {
+            return {
+                weight: 3,
+                color: '#000000',
+                fillOpacity: 0.95
+            };
+        }
+
+        // ============================================================
+        // LEYENDA
+        // ============================================================
+        var leyenda = L.control({position: 'bottomright'});
+        leyenda.onAdd = function (map) {
+            var div = L.DomUtil.create('div', 'info');
             var partidos = [
-                {nombre: 'PSOE', color: '#E31C1C'},
-                {nombre: 'PP', color: '#2E86C1'},
-                {nombre: 'Vox', color: '#27AE60'},
-                {nombre: 'Sumar/Podemos', color: '#8E44AD'},
-                {nombre: 'ERC', color: '#fcf40d'},
-                {nombre: 'Junts', color: '#FDB612'},
-                {nombre: 'EH Bildu', color: '#00D0B6'},
-                {nombre: 'PNV', color: '#2E7D32'},
-                {nombre: 'BNG', color: '#A2C7E4'},
-                {nombre: 'Otros', color: '#7f8a81'}
+                {n: 'PSOE', c: '#E31C1C'}, {n: 'PP', c: '#2E86C1'},
+                {n: 'Vox', c: '#27AE60'}, {n: 'Sumar/Podemos', c: '#8E44AD'},
+                {n: 'ERC', c: '#C8102E'}, {n: 'Junts', c: '#FDB612'},
+                {n: 'EH Bildu', c: '#00D0B6'}, {n: 'PNV', c: '#2E7D32'},
+                {n: 'BNG', c: '#751069'}, {n: 'Otros', c: '#95A5A6'}
             ];
             var html = '<h4>Partido ganador</h4>';
-            partidos.forEach(function(p) {
-                html += '<i style="background:' + p.color + '; width:12px; height:12px; display:inline-block; margin-right:5px;"></i> ' + p.nombre + '<br>';
+            partidos.forEach(function (p) {
+                html += `<i style="background:${p.c}; width:12px; height:12px; display:inline-block; margin-right:5px; border-radius:2px;"></i>${p.n}<br>`;
             });
             div.innerHTML = html;
             return div;
         };
-        legend.addTo(map);
+        leyenda.addTo(map);
 
-        //Selección
-        let municipiosSeleccionados = []; // Guarda los objetos {nombre, votos, partido}
-        let capasMunicipios = {}; // Referencia a cada capa por su código, para cambiar el estilo
-        
-        var panelSuma = L.control({position: 'topright'});
+        // ============================================================
+        // PANEL DE HERRAMIENTAS (colapsable)
+        // ============================================================
+        var panelHerramientas = L.control({position: 'topright'});
+        panelHerramientas.onAdd = function () {
+            var div = L.DomUtil.create('div', 'panel-herramientas');
+            div.innerHTML = `
+                <button id="btn-toggle-herramientas" class="btn-toggle-herramientas" title="Herramientas">⚙️</button>
+                <div id="contenido-herramientas" class="contenido-herramientas" style="display:none;">
+                    <h4>📊 Suma de municipios</h4>
+                    <div id="lista-seleccionados" class="lista-municipios">
+                        <p style="color:#888; margin:0;">Haz clic en los municipios del mapa para seleccionarlos.</p>
+                    </div>
+                    <hr style="border:none; border-top:1px solid #eee; margin:8px 0;">
+                    <div id="suma-por-partido"></div>
+                    <button id="btn-limpiar" class="btn-accion">🗑️ Limpiar selección</button>
+                </div>
+            `;
 
-        panelSuma.onAdd = function (map) {
-            var div = L.DomUtil.create('div', 'info');
-            div.id = 'panel-suma';
-            div.innerHTML = '<h4>Suma de municipios</h4><p>Haz clic en los municipios para seleccionarlos.</p><div id="lista-seleccionados"></div><hr><b>Total votos ganador: <span id="total-votos">0</span></b>';
+            // Evitar que los clics del panel lleguen al mapa
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
+
+            // Toggle del desplegable
+            var btnToggle = div.querySelector('#btn-toggle-herramientas');
+            var contenido = div.querySelector('#contenido-herramientas');
+            L.DomEvent.on(btnToggle, 'click', function (e) {
+                L.DomEvent.stop(e);
+                var abierto = contenido.style.display !== 'none';
+                contenido.style.display = abierto ? 'none' : 'block';
+                btnToggle.classList.toggle('activo', !abierto);
+            });
+
+            // Botón limpiar
+            var btnLimpiar = div.querySelector('#btn-limpiar');
+            L.DomEvent.on(btnLimpiar, 'click', function (e) {
+                L.DomEvent.stop(e);
+                limpiarSeleccion();
+            });
+
             return div;
         };
-        panelSuma.addTo(map);
+        panelHerramientas.addTo(map);
 
-        // Cargar el GeoJSON con los resultados
+        // ============================================================
+        // ACTUALIZACIÓN DEL PANEL
+        // ============================================================
+        function actualizarPanel() {
+            const listaDiv = document.getElementById('lista-seleccionados');
+            const sumaDiv = document.getElementById('suma-por-partido');
+            if (!listaDiv || !sumaDiv) return;
+
+            const codigos = Object.keys(municipiosSeleccionados);
+
+            // --- Lista de municipios ---
+            if (codigos.length === 0) {
+                listaDiv.innerHTML = '<p style="color:#888; margin:0;">Haz clic en los municipios del mapa para seleccionarlos.</p>';
+                sumaDiv.innerHTML = '';
+                return;
+            }
+
+            let htmlLista = `<b>Municipios (${codigos.length}):</b><br>`;
+            codigos.forEach(c => {
+                const m = municipiosSeleccionados[c];
+                htmlLista += `<div style="padding:1px 0;">· ${c} <span style="color:#666">(${m.ganador})</span></div>`;
+            });
+            listaDiv.innerHTML = htmlLista;
+
+            // --- Suma por partido ---
+            const sumas = {};
+            codigos.forEach(c => {
+                const votos = municipiosSeleccionados[c].votos;
+                for (const partido in votos) {
+                    sumas[partido] = (sumas[partido] || 0) + votos[partido];
+                }
+            });
+
+            const entradas = Object.entries(sumas)
+                .filter(([, v]) => v > 0)
+                .sort((a, b) => b[1] - a[1]);
+
+            const total = entradas.reduce((acc, [, v]) => acc + v, 0);
+
+            let htmlSuma = '<b>Votos por partido:</b>';
+            entradas.forEach(([partido, votos]) => {
+                const pct = total > 0 ? ((votos / total) * 100).toFixed(1) : '0.0';
+                const color = getColor(partido);
+                htmlSuma += `
+                    <div class="fila-partido">
+                        <span><i class="muestra-color" style="background:${color};"></i>${partido}</span>
+                        <span><b>${votos.toLocaleString('es-ES')}</b> <span style="color:#888">(${pct}%)</span></span>
+                    </div>`;
+            });
+            htmlSuma += `
+                <hr style="border:none; border-top:1px solid #ccc; margin:8px 0;">
+                <div class="fila-partido" style="font-weight:bold;">
+                    <span>TOTAL</span>
+                    <span>${total.toLocaleString('es-ES')}</span>
+                </div>`;
+            sumaDiv.innerHTML = htmlSuma;
+        }
+
+        // ============================================================
+        // LIMPIAR SELECCIÓN
+        // ============================================================
+        function limpiarSeleccion() {
+            Object.values(capasMunicipios).forEach(({ layer, feature }) => {
+                layer.setStyle(estiloOriginal(feature));
+            });
+            municipiosSeleccionados = {};
+            actualizarPanel();
+        }
+
+        // ============================================================
+        // GESTIÓN DE CADA MUNICIPIO
+        // ============================================================
+        function onEachFeature(feature, layer) {
+            const props = feature.properties;
+            const codigo = props.codigo_municipio;
+
+            // Extraer dinámicamente todas las propiedades votos_*
+            const votosPorPartido = {};
+            for (const key in props) {
+                if (key.startsWith('votos_') && key !== 'votos_ganador') {
+                    const partido = key.replace('votos_', '');
+                    const n = Number(props[key]) || 0;
+                    votosPorPartido[partido] = n;
+                }
+            }
+
+            // Popup
+            if (props.partido_ganador) {
+                let popupHtml = `<b>Municipio: </b>${codigo}<br>
+                                <b>Ganador: </b>${props.partido_ganador}<br>
+                                <b>Votos ganador: </b>${Number(props.votos_ganador || 0).toLocaleString('es-ES')}`;
+                layer.bindPopup(popupHtml);
+            }
+
+            capasMunicipios[codigo] = { layer, feature };
+
+            layer.on('click', function (e) {
+                L.DomEvent.stopPropagation(e);
+
+                if (municipiosSeleccionados[codigo]) {
+                    // Deseleccionar
+                    delete municipiosSeleccionados[codigo];
+                    layer.setStyle(estiloOriginal(feature));
+                } else {
+                    // Seleccionar
+                    municipiosSeleccionados[codigo] = {
+                        votos: votosPorPartido,
+                        ganador: props.partido_ganador || 'Sin datos'
+                    };
+                    layer.setStyle(estiloSeleccionado());
+                    layer.bringToFront();
+                }
+                actualizarPanel();
+            });
+        }
+
+        // ============================================================
+        // CARGA DEL GEOJSON
+        // ============================================================
         fetch('mapa.geojson')
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
-                // Función para asignar color según el partido ganador
-                function getColor(partido) {
-                    if (!partido) return '#cccccc'; // gris si no hay datos
-
-                    const p = partido.toUpperCase();
-
-                    if (p.includes('PP') || p.includes('POPULAR')) return '#2E86C1'; // azul
-                    if (p.includes('PSOE') || p.includes('PSC') || p.includes('PSdeG') || p.includes('SOCIALISTA')) return '#E74C3C'; // rojo
-                    if (p.includes('VOX')) return '#27AE60'; // verde
-                    if (p.includes('SUMAR') || p.includes('PODEMOS') || p.includes('UNIDAS PODEMOS') || p.includes('COMPROMIS')) return '#8E44AD'; // morado
-                    if (p.includes('ERC') || p.includes('ESQUERRA REPUBLICANA')) return '#fcf40d';
-                    if (p.includes('JUNTS')) return '#FDB612';
-                    if (p.includes('BILDU') || p.includes('EH BILDU')) return '#00D0B6';
-                    if (p.includes('PNV') || p.includes('EAJ-PNV')) return '#2E7D32';
-                    if (p.includes('BNG') || p.includes('BLOQUE NACIONALISTA')) return '#A2C7E4';
-                    return '#7f8a81'; // amarillo para otros
-                }
-
-                // Estilo de cada municipio
-                function style(feature) {
-                    return {
-                        fillColor: getColor(feature.properties.partido_ganador),
-                        weight: 1,
-                        opacity: 1,
-                        color: 'white',
-                        fillOpacity: 0.7
-                    };
-                }
-
-                // Popup al hacer clic
-                function onEachFeature(feature, layer) {
-                    if (feature.properties && feature.properties.partido_ganador) {
-                        layer.bindPopup(
-                            '<b>Municipio: </b>' + feature.properties.codigo_municipio + '<br>' +
-                            '<b>Ganador: </b>' + feature.properties.partido_ganador + '<br>' +
-                            '<b>Votos: </b>' + feature.properties.votos_ganador
-                        );
-                    }
-                    // Guardamos la capa para poder cambiar su estilo luego
-                    const codigo = feature.properties.codigo_municipio;
-                    capasMunicipios[codigo] = layer;
-
-                    // Evento de clic para seleccionar/deseleccionar
-                    layer.on('click', function (e) {
-                        L.DomEvent.stopPropagation(e); // Evita que el clic se propague al mapa
-
-                        const index = municipiosSeleccionados.findIndex(m => m.codigo === codigo);
-
-                        if (index === -1) {
-                            // --- SELECCIONAR ---
-                            municipiosSeleccionados.push({
-                                codigo: codigo,
-                                votos: feature.properties.votos_ganador || 0,
-                                partido: feature.properties.partido_ganador || 'Sin datos'
-                            });
-
-                            // Estilo visual: borde más grueso y oscuro
-                            layer.setStyle({
-                                weight: 3,
-                                color: '#000000',
-                                dashArray: '',
-                                fillOpacity: 0.9
-                            });
-                            layer.bringToFront();
-
-                        } else {
-                            // --- DESELECCIONAR ---
-                            municipiosSeleccionados.splice(index, 1);
-
-                            // Restaurar estilo original (el que definiste en la función `style`)
-                            layer.setStyle(estiloOriginal(feature));
-                        }
-
-                        actualizarPanelSuma();
-                    });
-                }
-
-                function estiloOriginal(feature) {
-                    return {
-                        fillColor: getColor(feature.properties.partido_ganador),
-                        weight: 1,
-                        opacity: 1,
-                        color: 'white',
-                        fillOpacity: 0.7
-                    };
-                }
-
-                function actualizarPanelSuma() {
-                    const listaDiv = document.getElementById('lista-seleccionados');
-                    const totalSpan = document.getElementById('total-votos');
-
-                    if (!listaDiv || !totalSpan) return; // Por si el panel no está listo
-
-                    // Limpiar lista
-                    listaDiv.innerHTML = '';
-
-                    let totalVotos = 0;
-
-                    municipiosSeleccionados.forEach(m => {
-                        totalVotos += m.votos;
-                        const item = document.createElement('div');
-                        item.style.marginBottom = '4px';
-                        item.innerHTML = `· ${m.codigo}: <b>${m.partido}</b> (${m.votos} votos)`;
-                        listaDiv.appendChild(item);
-                    });
-
-                    totalSpan.textContent = totalVotos.toLocaleString('es-ES');
-                }
-
-                // Añadir la capa GeoJSON al mapa
                 L.geoJSON(data, {
                     style: estiloOriginal,
                     onEachFeature: onEachFeature
                 }).addTo(map);
             })
-            .catch(error => console.error('Error cargando el GeoJSON:', error));
+            .catch(err => console.error('Error cargando el mapa:', err));
     </script>
 </body>
 </html>

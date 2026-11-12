@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimizador de Rutas</title>
+
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Leaflet Routing Machine -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+    <!-- Plugin de GraphHopper para LRM -->
+    <script src="https://unpkg.com/lrm-graphhopper@1.2.0/dist/lrm-graphhopper.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+
+        .panel-velocidades {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+            font-size: 13px;
+            width: 260px;
+        }
+        .panel-velocidades h4 { margin: 0 0 10px; font-size: 14px; }
+        .fila-vel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .fila-vel input {
+            width: 70px;
+            padding: 3px 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            text-align: right;
+        }
+        .btn-calcular {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px;
+            background: #2E86C1;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-calcular:hover { background: #2471A3; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="panel-velocidades">
+    <h4>🚗 Velocidades personalizadas (km/h)</h4>
+    <div class="fila-vel"><span>Autovía (motorway)</span><input type="number" id="vel-motorway" value="110" min="1" max="200"></div>
+    <div class="fila-vel"><span>Carretera nacional (trunk)</span><input type="number" id="vel-trunk" value="90" min="1" max="200"></div>
+    <div class="fila-vel"><span>Primaria (primary)</span><input type="number" id="vel-primary" value="80" min="1" max="200"></div>
+    <div class="fila-vel"><span>Secundaria (secondary)</span><input type="number" id="vel-secondary" value="60" min="1" max="200"></div>
+    <div class="fila-vel"><span>Terciaria (tertiary)</span><input type="number" id="vel-tertiary" value="50" min="1" max="200"></div>
+    <button class="btn-calcular" onclick="recalcularRuta()">🔄 Recalcular con estas velocidades</button>
+</div>
+
+<script>
+    // 1. Inicializar mapa
+    var map = L.map('map').setView([40.4168, -3.7038], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // 2. Clave API de GraphHopper (sustitúyela por la tuya)
+    const GH_API_KEY = '4a390548-61d4-43d0-ad3b-2cb729210cb5';
+
+    // 3. Crear el router de GraphHopper para Leaflet Routing Machine
+    const ghRouter = L.Routing.graphHopper(GH_API_KEY, {
+        urlParameters: {
+            vehicle: 'car',
+            // 'ch.disable' es OBLIGATORIO para que custom_model funcione
+            'ch.disable': true
+        }
+    });
+
+    // 4. Crear el control de rutas
+    let routingControl = L.Routing.control({
+        waypoints: [
+            L.latLng(40.4168, -3.7038), // Madrid
+            L.latLng(41.3874, 2.1686)   // Barcelona
+        ],
+        router: ghRouter,
+        routeWhileDragging: false,
+        show: true,
+        language: 'es',
+        lineOptions: {
+            styles: [{ color: '#2E86C1', weight: 6, opacity: 0.8 }]
+        }
+    }).addTo(map);
+
+    // 5. Función que construye el custom_model a partir de los inputs
+    function construirCustomModel() {
+        const velMotorway  = parseFloat(document.getElementById('vel-motorway').value)  || 100;
+        const velTrunk     = parseFloat(document.getElementById('vel-trunk').value)     || 90;
+        const velPrimary   = parseFloat(document.getElementById('vel-primary').value)   || 80;
+        const velSecondary = parseFloat(document.getElementById('vel-secondary').value) || 60;
+        const velTertiary  = parseFloat(document.getElementById('vel-tertiary').value)  || 50;
+
+        // Estructura que entiende GraphHopper:
+        // una lista de reglas "if ... limit_to ..."
+        return {
+            speed: [
+                { if: 'road_class == MOTORWAY',  limit_to: velMotorway  },
+                { if: 'road_class == TRUNK',     limit_to: velTrunk     },
+                { if: 'road_class == PRIMARY',   limit_to: velPrimary   },
+                { if: 'road_class == SECONDARY', limit_to: velSecondary },
+                { if: 'road_class == TERTIARY',  limit_to: velTertiary  }
+            ]
+        };
+    }
+
+    // 6. Recalcular la ruta con las velocidades del formulario
+    function recalcularRuta() {
+        const customModel = construirCustomModel();
+
+        // Actualizamos las opciones del router con el nuevo custom_model
+        ghRouter.options.urlParameters.custom_model = JSON.stringify(customModel);
+
+        // Forzar a LRM a recalcular con los nuevos parámetros
+        routingControl.route();
+    }
+</script>
+
+</body>
+</html>
