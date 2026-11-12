@@ -3,142 +3,236 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Optimizador de Rutas</title>
-
-    <!-- Leaflet -->
+    <title>Comparador de rutas por velocidad</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-    <!-- Leaflet Routing Machine -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-
-    <!-- Plugin de GraphHopper para LRM -->
-    <script src="https://unpkg.com/lrm-graphhopper@1.2.0/dist/lrm-graphhopper.js"></script>
-
     <style>
-        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        body { margin: 0; font-family: Arial, sans-serif; }
         #map { height: 100vh; width: 100%; }
 
-        .panel-velocidades {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            font-size: 13px;
-            width: 260px;
+        .panel {
+            position: absolute; top: 20px; right: 20px; z-index: 1000;
+            background: white; padding: 15px; border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.3); font-size: 13px; width: 320px;
         }
-        .panel-velocidades h4 { margin: 0 0 10px; font-size: 14px; }
-        .fila-vel {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-        }
-        .fila-vel input {
-            width: 70px;
-            padding: 3px 5px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            text-align: right;
-        }
+        .panel h4 { margin: 0 0 10px; font-size: 14px; }
+        .fila-vel { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .fila-vel input { width: 60px; padding: 3px 5px; border: 1px solid #ccc; border-radius: 4px; text-align: right; }
+        .fila-vel .grupo { display: flex; gap: 4px; }
+        .leyenda-inputs { font-size: 11px; color: #666; margin-top: 4px; display: flex; justify-content: space-between; padding: 0 4px; }
+
         .btn-calcular {
-            width: 100%;
-            margin-top: 10px;
-            padding: 8px;
-            background: #2E86C1;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
+            width: 100%; margin-top: 10px; padding: 8px;
+            background: #2E86C1; color: white; border: none; border-radius: 4px;
+            cursor: pointer; font-weight: bold;
         }
         .btn-calcular:hover { background: #2471A3; }
+        .btn-calcular:disabled { background: #95a5a6; cursor: not-allowed; }
+
+        #resultados { margin-top: 12px; border-top: 1px solid #eee; padding-top: 10px; }
+        .fila-resultado { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+        .muestra-color { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+        .fila-resultado .nombre { flex: 1; font-weight: bold; }
+        .fila-resultado .datos { text-align: right; color: #555; }
+        .mensaje { color: #888; font-size: 12px; text-align: center; padding: 8px 0; }
     </style>
 </head>
 <body>
 
 <div id="map"></div>
+<a href="index.html" style="position:absolute; top:20px; left:20px; z-index:1000;
+   background:white; padding:8px 14px; border-radius:6px;
+   box-shadow:0 2px 8px rgba(0,0,0,0.3); text-decoration:none;
+   font-weight:bold; color:#333; font-size:13px;">← Volver al mapa</a>
 
-<div class="panel-velocidades">
-    <h4>🚗 Velocidades personalizadas (km/h)</h4>
-    <div class="fila-vel"><span>Autovía (motorway)</span><input type="number" id="vel-motorway" value="110" min="1" max="200"></div>
-    <div class="fila-vel"><span>Carretera nacional (trunk)</span><input type="number" id="vel-trunk" value="90" min="1" max="200"></div>
-    <div class="fila-vel"><span>Primaria (primary)</span><input type="number" id="vel-primary" value="80" min="1" max="200"></div>
-    <div class="fila-vel"><span>Secundaria (secondary)</span><input type="number" id="vel-secondary" value="60" min="1" max="200"></div>
-    <div class="fila-vel"><span>Terciaria (tertiary)</span><input type="number" id="vel-tertiary" value="50" min="1" max="200"></div>
-    <button class="btn-calcular" onclick="recalcularRuta()">🔄 Recalcular con estas velocidades</button>
+<div class="panel">
+    <h4>🚗 Comparador de rutas</h4>
+    <div class="fila-vel">
+        <span>Autovía (km/h)</span>
+        <div class="grupo">
+            <input type="number" id="eco-motorway" value="100" title="Eco">
+            <input type="number" id="fast-motorway" value="140" title="Rápida">
+        </div>
+    </div>
+    <div class="fila-vel">
+        <span>Nacional (km/h)</span>
+        <div class="grupo">
+            <input type="number" id="eco-trunk" value="80" title="Eco">
+            <input type="number" id="fast-trunk" value="100" title="Rápida">
+        </div>
+    </div>
+    <div class="leyenda-inputs">
+        <span>← Bajo consumo</span>
+        <span>Alta velocidad →</span>
+    </div>
+    <button class="btn-calcular" id="btn-calcular" onclick="calcularYComparar()">🔄 Calcular y comparar</button>
+    <div id="resultados"><div class="mensaje">Pulsa "Calcular y comparar"</div></div>
 </div>
 
 <script>
-    // 1. Inicializar mapa
-    var map = L.map('map').setView([40.4168, -3.7038], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
+// ============================================================
+// CONFIGURACIÓN
+// ============================================================
+const GH_API_KEY = '4a390548-61d4-43d0-ad3b-2cb729210cb5';
+const ORIGEN  = { lat: 40.4168, lng: -3.7038 };  // Madrid
+const DESTINO = { lat: 41.3874, lng: 2.1686 };   // Barcelona
 
-    // 2. Clave API de GraphHopper (sustitúyela por la tuya)
-    const GH_API_KEY = '4a390548-61d4-43d0-ad3b-2cb729210cb5';
+// ============================================================
+// MAPA Y PANES (z-index fijo)
+// ============================================================
+var map = L.map('map').setView([40.9, -1.5], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap'
+}).addTo(map);
 
-    // 3. Crear el router de GraphHopper para Leaflet Routing Machine
-    const ghRouter = L.Routing.graphHopper(GH_API_KEY, {
-        urlParameters: {
-            vehicle: 'car',
-            // 'ch.disable' es OBLIGATORIO para que custom_model funcione
-            'ch.disable': true
-        }
-    });
+// Tres panes con z-index creciente: pane-slow < pane-mid < pane-fast
+['slow', 'mid', 'fast'].forEach((nombre, i) => {
+    const pane = map.createPane('pane-' + nombre);
+    pane.style.zIndex = 410 + i * 10;
+});
 
-    // 4. Crear el control de rutas
-    let routingControl = L.Routing.control({
-        waypoints: [
-            L.latLng(40.4168, -3.7038), // Madrid
-            L.latLng(41.3874, 2.1686)   // Barcelona
-        ],
-        router: ghRouter,
-        routeWhileDragging: false,
-        show: true,
-        language: 'es',
-        lineOptions: {
-            styles: [{ color: '#2E86C1', weight: 6, opacity: 0.8 }]
-        }
-    }).addTo(map);
+L.marker([ORIGEN.lat, ORIGEN.lng]).addTo(map).bindPopup('Origen: Madrid');
+L.marker([DESTINO.lat, DESTINO.lng]).addTo(map).bindPopup('Destino: Barcelona');
 
-    // 5. Función que construye el custom_model a partir de los inputs
-    function construirCustomModel() {
-        const velMotorway  = parseFloat(document.getElementById('vel-motorway').value)  || 100;
-        const velTrunk     = parseFloat(document.getElementById('vel-trunk').value)     || 90;
-        const velPrimary   = parseFloat(document.getElementById('vel-primary').value)   || 80;
-        const velSecondary = parseFloat(document.getElementById('vel-secondary').value) || 60;
-        const velTertiary  = parseFloat(document.getElementById('vel-tertiary').value)  || 50;
+let capasActuales = [];
 
-        // Estructura que entiende GraphHopper:
-        // una lista de reglas "if ... limit_to ..."
-        return {
-            speed: [
-                { if: 'road_class == MOTORWAY',  limit_to: velMotorway  },
-                { if: 'road_class == TRUNK',     limit_to: velTrunk     },
-                { if: 'road_class == PRIMARY',   limit_to: velPrimary   },
-                { if: 'road_class == SECONDARY', limit_to: velSecondary },
-                { if: 'road_class == TERTIARY',  limit_to: velTertiary  }
-            ]
-        };
+// ============================================================
+// UTILIDADES
+// ============================================================
+function construirCustomModel(velocidades) {
+    if (!velocidades || Object.keys(velocidades).length === 0) return null;
+    const speed = [];
+    if (velocidades.motorway) speed.push({ if: 'road_class == MOTORWAY', limit_to: velocidades.motorway });
+    if (velocidades.trunk)    speed.push({ if: 'road_class == TRUNK',    limit_to: velocidades.trunk });
+    return { speed };
+}
+
+function formatearTiempo(segundos) {
+    const h = Math.floor(segundos / 3600);
+    const m = Math.round((segundos % 3600) / 60);
+    return h > 0 ? `${h}h ${m}min` : `${m}min`;
+}
+
+function limpiarRutas() {
+    capasActuales.forEach(capa => map.removeLayer(capa));
+    capasActuales = [];
+}
+
+// ============================================================
+// PETICIÓN A GRAPHHOPPER
+// ============================================================
+async function calcularRuta(escenario) {
+    const customModel = construirCustomModel(escenario.velocidades);
+    const params = new URLSearchParams();
+    params.append('point', `${ORIGEN.lat},${ORIGEN.lng}`);
+    params.append('point', `${DESTINO.lat},${DESTINO.lng}`);
+    params.set('profile', 'car');
+    params.set('points_encoded', 'false');
+    params.set('locale', 'es');
+    params.set('key', GH_API_KEY);
+
+    if (customModel) {
+        params.set('ch.disable', 'true');
+        params.set('custom_model', JSON.stringify(customModel));
     }
 
-    // 6. Recalcular la ruta con las velocidades del formulario
-    function recalcularRuta() {
-        const customModel = construirCustomModel();
+    const url = `https://graphhopper.com/api/1/route?${params.toString()}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} (${escenario.nombre})`);
+    const data = await resp.json();
+    if (!data.paths || !data.paths[0]) throw new Error(`Sin ruta (${escenario.nombre})`);
 
-        // Actualizamos las opciones del router con el nuevo custom_model
-        ghRouter.options.urlParameters.custom_model = JSON.stringify(customModel);
+    return { ...escenario, ruta: data.paths[0] };
+}
 
-        // Forzar a LRM a recalcular con los nuevos parámetros
-        routingControl.route();
+// ============================================================
+// CÁLCULO Y DIBUJO
+// ============================================================
+async function calcularYComparar() {
+    const btn = document.getElementById('btn-calcular');
+    const divRes = document.getElementById('resultados');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Calculando...';
+    divRes.innerHTML = '<div class="mensaje">Calculando 3 rutas en paralelo...</div>';
+    limpiarRutas();
+
+    const escenarios = [
+        {
+            id: 'eco', nombre: 'Bajo consumo', color: '#27AE60',
+            velocidades: {
+                motorway: parseFloat(document.getElementById('eco-motorway').value) || 100,
+                trunk:    parseFloat(document.getElementById('eco-trunk').value)    || 80
+            }
+        },
+        {
+            id: 'normal', nombre: 'Normal', color: '#F1C40F',
+            velocidades: {}  // sin custom_model → velocidades por defecto de GraphHopper
+        },
+        {
+            id: 'rapida', nombre: 'Alta velocidad', color: '#E31C1C',
+            velocidades: {
+                motorway: parseFloat(document.getElementById('fast-motorway').value) || 140,
+                trunk:    parseFloat(document.getElementById('fast-trunk').value)    || 100
+            }
+        }
+    ];
+
+    try {
+        // 3 peticiones en paralelo (3 créditos)
+        const resultados = await Promise.all(escenarios.map(calcularRuta));
+
+        // Asignación de panes por duración: la más lenta al pane más bajo,
+        // la más rápida al más alto. Así siempre queda arriba, sin importar
+        // qué escenario haya resultado ganador.
+        const ordenPorDuracion = [...resultados].sort((a, b) => b.ruta.time - a.ruta.time);
+        const paneNames = ['pane-slow', 'pane-mid', 'pane-fast'];
+        ordenPorDuracion.forEach((r, idx) => { r.paneName = paneNames[idx]; });
+
+        // Dibujo
+        resultados.forEach(r => {
+            const coords = r.ruta.points.coordinates.map(c => [c[1], c[0]]); // GeoJSON: [lng, lat]
+            const linea = L.polyline(coords, {
+                pane: r.paneName,
+                color: r.color,
+                weight: 6,
+                opacity: 0.85
+            }).addTo(map);
+
+            linea.bindPopup(
+                `<b>${r.nombre}</b><br>` +
+                `Distancia: ${(r.ruta.distance / 1000).toFixed(1)} km<br>` +
+                `Tiempo: ${formatearTiempo(r.ruta.time)}`
+            );
+            capasActuales.push(linea);
+        });
+
+        // Panel resumen (más rápida arriba)
+        const ordenados = [...resultados].sort((a, b) => a.ruta.time - b.ruta.time);
+        let html = '';
+        ordenados.forEach((r, i) => {
+            html += `<div class="fila-resultado">
+                <span class="muestra-color" style="background:${r.color};"></span>
+                <span class="nombre">${i === 0 ? '🏆 ' : ''}${r.nombre}</span>
+                <span class="datos">${(r.ruta.distance / 1000).toFixed(0)} km · ${formatearTiempo(r.ruta.time)}</span>
+            </div>`;
+        });
+        divRes.innerHTML = html;
+
+        // Ajustar zoom para ver las tres rutas
+        const todasCoords = resultados.flatMap(r =>
+            r.ruta.points.coordinates.map(c => [c[1], c[0]])
+        );
+        map.fitBounds(L.latLngBounds(todasCoords), { padding: [40, 40] });
+
+    } catch (err) {
+        console.error(err);
+        divRes.innerHTML = `<div class="mensaje" style="color:#C0392B;">❌ ${err.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Calcular y comparar';
     }
+}
 </script>
 
 </body>

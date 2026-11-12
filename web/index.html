@@ -75,7 +75,34 @@
             width: 100%;
             margin-top: 8px;
         }
-        .btn-accion:hover { background: #e5e5e5; }
+        .btn-accion:hover { 
+            background: #e5e5e5; 
+        }
+        .btn-navegacion {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+            padding: 8px 10px;
+            margin-top: 12px;
+            background: linear-gradient(135deg, #2E86C1, #2471A3);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            text-decoration: none;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .btn-navegacion:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(46, 134, 193, 0.4);
+        }
+        .btn-navegacion:active {
+            transform: translateY(0);
+        }
 
         .fila-partido {
             display: flex;
@@ -204,6 +231,7 @@
                     <hr style="border:none; border-top:1px solid #eee; margin:8px 0;">
                     <div id="suma-por-partido"></div>
                     <button id="btn-limpiar" class="btn-accion">🗑️ Limpiar selección</button>
+                    <a href="routing.html" class="btn-navegacion">🧭 Comparar rutas</a>
                 </div>
             `;
 
